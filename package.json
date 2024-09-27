@@ -1,0 +1,16 @@
+{
+  "name": "cyclagear-spreadsheet-parser",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/index.js",
+  "scripts": {
+    "generate-report": "node src/index.js"
+  },
+  "dependencies": {
+    "csv-parser": "^3.0.0",
+    "dotenv": "^16.4.5",
+    "fs": "^0.0.1-security",
+    "json2csv": "^6.0.0-alpha.2",
+    "path": "^0.12.7"
+  }
+}
