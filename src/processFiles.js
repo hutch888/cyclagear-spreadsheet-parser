@@ -11,8 +11,9 @@ async function processFiles(ordersFile, adFeesFile, shippingLabelsFile) {
         const orderNumber = row['Order number'];
         ordersMap.set(orderNumber, {
           'Order number': orderNumber,
+          'SKU': row['Custom label'],
           'Date sold': row['Transaction creation date'],
-          '2024 Online Inventory Tracker': row['Item title'],
+          '2025 Online Inventory Tracker': row['Item title'],
           '# Sold': row['Quantity'],
           'Sold $': row['Item subtotal'],
           'Final Value Fee - fixed': row['Final Value Fee - fixed'],

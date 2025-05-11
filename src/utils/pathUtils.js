@@ -40,9 +40,10 @@ function getFilePaths(argDate) {
     const folderPath = getReportsFolderPath(argDate);
 
     return {
-        adFeesFile: path.join(folderPath, `ad-fees-${dateString}.csv`),
-        ordersFile: path.join(folderPath, `orders-${dateString}.csv`),
-        shippingLabelsFile: path.join(folderPath, `shipping-labels-${dateString}.csv`),
+        baseFolder: folderPath,
+        adFeesFile: path.join(folderPath, `ad-fees.csv`),
+        ordersFile: path.join(folderPath, `orders.csv`),
+        shippingLabelsFile: path.join(folderPath, `shipping-labels.csv`),
         adFeesDataFile: path.join(folderPath, `ad-fees-data.csv`),
         ordersDataFile: path.join(folderPath, `orders-data.csv`),
         shippingLabelsDataFile: path.join(folderPath, `shipping-labels-data.csv`),
