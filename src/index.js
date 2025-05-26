@@ -1,6 +1,6 @@
 const { getFilePaths } = require('./utils/pathUtils');
 const { cleanCsvFile } = require('./utils/cleanCsvFile');
-const { processFiles } = require('./processFiles');
+const { processReports } = require('./processReport');
 const { isValidDateFormat } = require('./utils/validators');
 const { writeCsvFromJson } = require('./utils/writeCsv');
 const { deleteIntermediateFiles } = require('./utils/deleteIntermediateFiles');
