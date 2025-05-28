@@ -1,31 +1,27 @@
 const fs = require('fs');
-const path = require('path');
 const csv = require('csv-parser');
 
 /**
- * Parses a combined eBay transaction report and groups data by order number.
- * @param {string} filePath - Full path to the CSV file.
- * @returns {Promise<Object>} - A promise that resolves to an object keyed by order number.
+ * Parse a cleaned (comma‑separated) eBay Transaction report and aggregate by order number.
+ * Only keep orders that have at least one "order" row (quantity > 0).
+ *
+ * @param {string} filePath absolute path to cleaned CSV produced by cleanCsvFile.
+ * @returns {Promise<Object>} keyed by order number.
  */
 function parseCsvFile(filePath) {
   console.log('Reading CSV from:', filePath);
 
   const orders = {};
+  const csvOptions = {
+    mapHeaders: ({ header }) => header.trim(),
+  };
 
   return new Promise((resolve, reject) => {
-    let headerSkipped = false;
-
     fs.createReadStream(filePath)
-      .pipe(csv())
+      .pipe(csv(csvOptions))
       .on('data', (row) => {
-        // Wait until real headers show up
-        if (!headerSkipped) {
-          if (row['Transaction creation date']) {
-            headerSkipped = true;
-          } else {
-            return;
-          }
-        }
+        // Skip header row (csv-parser still emits it)
+        if (row['Type'] === 'Type') return;
 
         const type = row['Type']?.toLowerCase();
         const orderNumber = row['Order number'];
@@ -33,44 +29,61 @@ function parseCsvFile(filePath) {
 
         if (!orders[orderNumber]) {
           orders[orderNumber] = {
-            sku: row['Custom label'], // Q → SKU
-            dateSold: formatDate(row['Transaction creation date']), // A → Date Sold
-            itemTitle: row['Item title'], // P → 2025 Online Inventory Tracker
-            quantity: parseInt(row['Quantity'] || '0'), // R → # Sold
-            soldAmount: parseFloat(row['Item subtotal'] || '0'), // S → Sold $
-            fvFee: 0, // FV Fee = W + X
-            adFee: 0, // AE from "Other fee"
-            shipCost: 0 // AE from "Shipping label"
+            sku: '',
+            dateSold: formatDate(row['Transaction creation date']),
+            itemTitle: '',
+            quantity: 0,
+            soldAmount: 0,
+            fvFee: 0,
+            adFee: 0,
+            shipCost: 0,
           };
         }
 
         const order = orders[orderNumber];
 
         if (type === 'order') {
-          order.fvFee += parseFloat(row['Final Value Fee - fixed'] || '0'); // W
-          order.fvFee += parseFloat(row['Final Value Fee - variable'] || '0'); // X
+          // Capture SKU/title from the order row (most reliable)
+          if (row['Custom label']) order.sku = row['Custom label'];
+          if (row['Item title']) order.itemTitle = row['Item title'];
+
+          order.quantity += parseInt(row['Quantity'] || '0', 10);
+          order.soldAmount = round2(order.soldAmount + parseFloat(row['Item subtotal'] || '0'));
+          order.fvFee = round2(order.fvFee + parseFloat(row['Final Value Fee - fixed'] || '0') + parseFloat(row['Final Value Fee - variable'] || '0'));
         } else if (type === 'other fee') {
           const desc = row['Description']?.toLowerCase();
           if (desc?.includes('promoted listings')) {
-            order.adFee += parseFloat(row['Net amount'] || '0'); // AE → Ad Fee
+            order.adFee = round2(order.adFee + parseFloat(row['Net amount'] || '0'));
           }
         } else if (type === 'shipping label') {
-          order.shipCost += parseFloat(row['Net amount'] || '0'); // AE → Ship Cost
+          order.shipCost = round2(order.shipCost + parseFloat(row['Net amount'] || '0'));
         }
       })
-      .on('end', () => resolve(orders))
+      .on('end', () => {
+        // Remove entries that never had a real order row (quantity === 0)
+        for (const [key, val] of Object.entries(orders)) {
+          if (val.quantity === 0) delete orders[key];
+          // Default zeros rounded
+          val.fvFee = round2(val.fvFee);
+        }
+        console.log('Finished parsing. Total valid orders:', Object.keys(orders).length);
+        resolve(orders);
+      })
       .on('error', reject);
   });
 }
 
 function formatDate(dateString) {
-  const parsedDate = new Date(dateString);
-  if (isNaN(parsedDate)) return dateString;
-  const m = parsedDate.getMonth() + 1;
-  const d = parsedDate.getDate();
-  const y = parsedDate.getFullYear().toString().slice(-2);
+  const parsed = new Date(dateString);
+  if (isNaN(parsed)) return dateString;
+  const m = parsed.getMonth() + 1;
+  const d = parsed.getDate();
+  const y = parsed.getFullYear().toString().slice(-2);
   return `${m}/${d}/${y}`;
 }
 
-module.exports = { parseCsvFile };
+function round2(num) {
+  return Math.round((num + Number.EPSILON) * 100) / 100;
+}
 
+module.exports = { parseCsvFile };

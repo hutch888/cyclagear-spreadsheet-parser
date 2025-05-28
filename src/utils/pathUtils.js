@@ -1,59 +1,68 @@
-require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
+const os = require('os');
+require('dotenv').config();
 
 /**
- * Format a date as mm-dd-yy
- * @param argDate: a date with format mm-dd-yy
- * @returns string with the formatted date.
+ * Expand a leading ~ to the current user's home directory.
+ * @param {string} p
+ * @returns {string}
  */
-function getFormattedDate(argDate) {
-    if (argDate) {
-        return argDate;
-    }
-
-    const today = new Date();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    const year = String(today.getFullYear()).slice(-2);
-    
-    return `${month}-${day}-${year}`;
+function expandHome(p) {
+  return p.startsWith('~') ? path.join(os.homedir(), p.slice(1)) : p;
 }
 
 /**
- * Generate the full folder path to the csv files
- * @param argDate: a date with format mm-dd-yy
- * @returns a string of the path
+ * Return the absolute path of the dated report folder for a given mm-dd-yy string.
+ * BASE_REPORTS_PATH must be defined in .env.
+ * @param {string} dateStr
  */
-function getReportsFolderPath(argDate) {
-    const dateString = getFormattedDate(argDate);
-    return path.join(process.env.BASE_REPORTS_PATH, dateString);
+function getReportFolder(dateStr) {
+  const base = process.env.BASE_REPORTS_PATH;
+  if (!base) throw new Error('BASE_REPORTS_PATH is not set in the environment');
+  return path.join(expandHome(base), dateStr);
 }
 
-// Function to generate the full file paths
 /**
- * Generate the full file paths
- * @param argDate: a date with format mm-dd-yy
- * @returns an object with the paths to the csv files
+ * Locate the first Transaction_report*.csv file inside the dated folder.
+ * If several exist, returns the most recently modified one.
+ * @param {string} dateStr - Date in mm-dd-yy format.
+ * @returns {string} absolute path to CSV
  */
-function getFilePaths(argDate) {
-    const dateString = getFormattedDate(argDate);
-    const folderPath = getReportsFolderPath(argDate);
+function getTransactionReportPath(dateStr) {
+  const folder = getReportFolder(dateStr);
+  if (!fs.existsSync(folder)) {
+    throw new Error(`Report folder not found: ${folder}`);
+  }
 
-    return {
-        baseFolder: folderPath,
-        adFeesFile: path.join(folderPath, `ad-fees.csv`),
-        ordersFile: path.join(folderPath, `orders.csv`),
-        shippingLabelsFile: path.join(folderPath, `shipping-labels.csv`),
-        adFeesDataFile: path.join(folderPath, `ad-fees-data.csv`),
-        ordersDataFile: path.join(folderPath, `orders-data.csv`),
-        shippingLabelsDataFile: path.join(folderPath, `shipping-labels-data.csv`),
-    };
+  const candidates = fs.readdirSync(folder)
+    .filter((f) => f.startsWith('Transaction_report'))
+    .filter((f) => f.endsWith('.csv'));
+
+  if (candidates.length === 0) {
+    throw new Error(`No Transaction_report*.csv file found in ${folder}`);
+  }
+
+  // If multiple, pick the newest by mtime
+  const sorted = candidates.sort((a, b) => {
+    const aTime = fs.statSync(path.join(folder, a)).mtimeMs;
+    const bTime = fs.statSync(path.join(folder, b)).mtimeMs;
+    return bTime - aTime;
+  });
+
+  return path.join(folder, sorted[0]);
 }
 
-// Example usage:
-// const filePaths = getFilePaths();
-// console.log('Ad Fees File:', filePaths.adFeesFile);
-// console.log('Orders File:', filePaths.ordersFile);
-// console.log('Shipping Labels File:', filePaths.shippingLabelsFile);
-
-module.exports = { getFilePaths };
+module.exports = {
+  getReportFolder,
+  /**
+   * Original helper for callers that expect "getFilePaths".
+   * Returns the absolute path to the single Transaction_report CSV
+   * inside the dated folder.
+   *
+   * @param {string} dateStr mm-dd-yy
+   * @returns {{ transactionReportPath: string }}
+   */
+  getFilePaths: (dateStr) => ({ transactionReportPath: getTransactionReportPath(dateStr) }),
+  getTransactionReportPath,
+};

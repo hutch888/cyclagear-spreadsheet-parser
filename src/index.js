@@ -1,63 +1,47 @@
-const { getFilePaths } = require('./utils/pathUtils');
-const { cleanCsvFile } = require('./utils/cleanCsvFile');
-const { processReports } = require('./processReport');
-const { isValidDateFormat } = require('./utils/validators');
-const { writeCsvFromJson } = require('./utils/writeCsv');
-const { deleteIntermediateFiles } = require('./utils/deleteIntermediateFiles');
+require('dotenv').config();
+const path = require('path');
 const fs = require('fs');
-const csv = require('csv-parser');
+const { getTransactionReportPath, getReportFolder } = require('./utils/pathUtils');
+const { cleanCsvFile } = require('./utils/cleanCsvFile');
+const { parseCsvFile } = require('./parseCsv');
+const { writeCsvFromJson } = require('./utils/writeCsv');
+const { isValidDateFormat } = require('./utils/validators');
 
 async function main() {
-    const args = process.argv.slice(2);
-    const dateArg = args[0];
-    
-    if (!isValidDateFormat(dateArg)) {
-        console.error('Error: Invalid date format. Please use mm-dd-yy and ensure the date is valid.');
-        process.exit(1);
-      }
-    
-    const filePaths = getFilePaths(dateArg);
-    const ordersFile = filePaths.ordersFile;
-    const adFeesFile = filePaths.adFeesFile;
-    const shippingLabelsFile = filePaths.shippingLabelsFile;
+  const args = process.argv.slice(2);
+  const dateArg = args[0];
 
-    const ordersDataFile = filePaths.ordersDataFile;
-    const adFeesDataFile = filePaths.adFeesDataFile;
-    const shippingLabelsDataFile = filePaths.shippingLabelsDataFile;
+  if (!isValidDateFormat(dateArg)) {
+    console.error('Error: Invalid date format. Please use mm-dd-yy and ensure the date is valid.');
+    process.exit(1);
+  }
 
-    await cleanCsvFile(ordersFile, ordersDataFile);
-    await cleanCsvFile(adFeesFile, adFeesDataFile);
-    await cleanCsvFile(shippingLabelsFile, shippingLabelsDataFile);
+  try {
+    // 1️⃣ Locate raw report
+    const rawCsvPath = getTransactionReportPath(dateArg);
+    const folder = getReportFolder(dateArg);
+    const cleanedPath = path.join(folder, `cleaned-${dateArg}.csv`);
 
-    const jsonData = await processFiles(ordersDataFile, adFeesDataFile, shippingLabelsDataFile);
+    // 2️⃣ Strip pre‑header junk once
+    await cleanCsvFile(rawCsvPath, cleanedPath);
 
-    console.log('JSON Data:', jsonData);
+    // 3️⃣ Parse cleaned file
+    const ordersObj = await parseCsvFile(cleanedPath);
+    const rows = Object.values(ordersObj);
 
-    const outputFolder = filePaths.baseFolder;
-    
-    try {
-      writeCsvFromJson(jsonData, dateArg, filePaths.baseFolder);
-  
-      // Only delete files if CSV writing succeeded
-      await deleteIntermediateFiles(
-        ordersDataFile,
-        adFeesDataFile,
-        shippingLabelsDataFile
-      );
-    } catch (err) {
-      console.error('❌ Failed to write final CSV:', err.message);
-      console.warn('Intermediate files were NOT deleted for debugging.');
-    }
+    console.log(`rows = ${JSON.stringify(rows)}`);
+
+    // 4️⃣ Write summary CSV
+    writeCsvFromJson(rows, dateArg, folder);
+
+    // 5️⃣ Optionally delete cleaned file
+    fs.unlinkSync(cleanedPath);
+
+    console.log('✅ Report generated successfully!');
+  } catch (err) {
+    console.error('❌ Failed to generate report:', err.message);
+    process.exit(1);
+  }
 }
 
 main();
-
-// Example of reading one of the CSV files
-// fs.createReadStream(filePaths.adFeesFile)
-//   .pipe(csv())
-//   .on('data', (data) => {
-//     console.log(data);
-//   })
-//   .on('end', () => {
-//     console.log('CSV file processed');
-//   });
