@@ -34,11 +34,12 @@ function parseCsvFile(filePath) {
         if (!orderNo) return;
 
         // Create a row object *only* when we first encounter an "order" line
-        if (!map.has(orderNo) && type === 'order') {
+        // always create aggregate row on first sight of any line
+        if (!map.has(orderNo)) {
           const obj = {
-            sku: row['Custom label'] || '',
+            sku: '',
             dateSold: formatDate(row['Transaction creation date']),
-            itemTitle: row['Item title'] || '',
+            itemTitle: '',
             quantity: 0,
             soldAmount: 0,
             fvFee: 0,
@@ -46,7 +47,7 @@ function parseCsvFile(filePath) {
             shipCost: 0,
           };
           map.set(orderNo, obj);
-          rows.push(obj);       // preserve first‑seen order
+          rows.push(obj);
         }
 
         const order = map.get(orderNo);
@@ -60,19 +61,18 @@ function parseCsvFile(filePath) {
           order.quantity    += parseInt(row['Quantity'] || '0', 10);
           order.soldAmount  = round2(order.soldAmount + parseFloat(row['Item subtotal'] || '0'));
           order.fvFee       = round2(order.fvFee + parseFloat(row['Final Value Fee - fixed'] || '0') +
-                                                  parseFloat(row['Final Value Fee - variable'] || '0') + 
-                                                  parseFloat(row['Very high "item not as described" fee'] || '0'));
+                                                  parseFloat(row['Final Value Fee - variable'] || '0'));
         } else if (type === 'other fee') {
-          if ((row['Description'] || '').toLowerCase().includes('promoted listings')) {
-            order.adFee = round2(order.adFee + parseFloat(row['Net amount'] || '0'));
-          }
-        } else if (type === 'shipping label') {
+          // Treat every net amount from an "Other fee" row as Ad fee for that order
+          order.adFee = round2(order.adFee + parseFloat(row['Net amount'] || '0'));
+        }
+        else if (type === 'shipping label') {
           order.shipCost = round2(order.shipCost + parseFloat(row['Net amount'] || '0'));
         }
       })
       .on('end', () => {
         console.log('Finished parsing. Total valid orders:', rows.length);
-        resolve(rows);
+        resolve(rows.slice().reverse()); // return in reverse order
       })
       .on('error', reject);
   });
