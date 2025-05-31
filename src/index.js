@@ -26,10 +26,7 @@ async function main() {
     await cleanCsvFile(rawCsvPath, cleanedPath);
 
     // 3️⃣ Parse cleaned file
-    const ordersObj = await parseCsvFile(cleanedPath);
-    const rows = Object.values(ordersObj);
-
-    console.log(`rows = ${JSON.stringify(rows)}`);
+    const rows = await parseCsvFile(cleanedPath);
 
     // 4️⃣ Write summary CSV
     writeCsvFromJson(rows, dateArg, folder);

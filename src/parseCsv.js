@@ -2,16 +2,22 @@ const fs = require('fs');
 const csv = require('csv-parser');
 
 /**
- * Parse a cleaned (comma‑separated) eBay Transaction report and aggregate by order number.
- * Only keep orders that have at least one "order" row (quantity > 0).
+ * Parse a cleaned (comma‑separated) eBay Transaction report **while preserving
+ * the order that the first "order" row appears in the file**.
  *
- * @param {string} filePath absolute path to cleaned CSV produced by cleanCsvFile.
- * @returns {Promise<Object>} keyed by order number.
+ * It returns an **array** rather than an object so the caller can write rows
+ * directly in the original sequence.
+ *
+ * @param {string} filePath – absolute path to the cleaned CSV produced by cleanCsvFile
+ * @returns {Promise<Array<Object>>} – ordered rows ready for CSV output
  */
 function parseCsvFile(filePath) {
   console.log('Reading CSV from:', filePath);
 
-  const orders = {};
+  // lookup by order number (for quick mutation) + ordered array of refs
+  const map = new Map();
+  const rows = [];
+
   const csvOptions = {
     mapHeaders: ({ header }) => header.trim(),
   };
@@ -20,39 +26,44 @@ function parseCsvFile(filePath) {
     fs.createReadStream(filePath)
       .pipe(csv(csvOptions))
       .on('data', (row) => {
-        // Skip header row (csv-parser still emits it)
+        // Skip header row emitted by csv-parser
         if (row['Type'] === 'Type') return;
 
-        const type = row['Type']?.toLowerCase();
-        const orderNumber = row['Order number'];
-        if (!orderNumber) return;
+        const type = (row['Type'] || '').toLowerCase();
+        const orderNo = row['Order number'];
+        if (!orderNo) return;
 
-        if (!orders[orderNumber]) {
-          orders[orderNumber] = {
-            sku: '',
+        // Create a row object *only* when we first encounter an "order" line
+        if (!map.has(orderNo) && type === 'order') {
+          const obj = {
+            sku: row['Custom label'] || '',
             dateSold: formatDate(row['Transaction creation date']),
-            itemTitle: '',
+            itemTitle: row['Item title'] || '',
             quantity: 0,
             soldAmount: 0,
             fvFee: 0,
             adFee: 0,
             shipCost: 0,
           };
+          map.set(orderNo, obj);
+          rows.push(obj);       // preserve first‑seen order
         }
 
-        const order = orders[orderNumber];
+        const order = map.get(orderNo);
+        if (!order) return;     // Ignore fee/label rows w/o matching order
 
         if (type === 'order') {
-          // Capture SKU/title from the order row (most reliable)
-          if (row['Custom label']) order.sku = row['Custom label'];
-          if (row['Item title']) order.itemTitle = row['Item title'];
+          // SKU & title are most reliable here
+          if (!order.sku && row['Custom label']) order.sku = row['Custom label'];
+          if (!order.itemTitle && row['Item title']) order.itemTitle = row['Item title'];
 
-          order.quantity += parseInt(row['Quantity'] || '0', 10);
-          order.soldAmount = round2(order.soldAmount + parseFloat(row['Item subtotal'] || '0'));
-          order.fvFee = round2(order.fvFee + parseFloat(row['Final Value Fee - fixed'] || '0') + parseFloat(row['Final Value Fee - variable'] || '0'));
+          order.quantity    += parseInt(row['Quantity'] || '0', 10);
+          order.soldAmount  = round2(order.soldAmount + parseFloat(row['Item subtotal'] || '0'));
+          order.fvFee       = round2(order.fvFee + parseFloat(row['Final Value Fee - fixed'] || '0') +
+                                                  parseFloat(row['Final Value Fee - variable'] || '0') + 
+                                                  parseFloat(row['Very high "item not as described" fee'] || '0'));
         } else if (type === 'other fee') {
-          const desc = row['Description']?.toLowerCase();
-          if (desc?.includes('promoted listings')) {
+          if ((row['Description'] || '').toLowerCase().includes('promoted listings')) {
             order.adFee = round2(order.adFee + parseFloat(row['Net amount'] || '0'));
           }
         } else if (type === 'shipping label') {
@@ -60,14 +71,8 @@ function parseCsvFile(filePath) {
         }
       })
       .on('end', () => {
-        // Remove entries that never had a real order row (quantity === 0)
-        for (const [key, val] of Object.entries(orders)) {
-          if (val.quantity === 0) delete orders[key];
-          // Default zeros rounded
-          val.fvFee = round2(val.fvFee);
-        }
-        console.log('Finished parsing. Total valid orders:', Object.keys(orders).length);
-        resolve(orders);
+        console.log('Finished parsing. Total valid orders:', rows.length);
+        resolve(rows);
       })
       .on('error', reject);
   });
