@@ -2,19 +2,15 @@ const fs = require('fs');
 const csv = require('csv-parser');
 
 /**
- * Parse a cleaned (comma‑separated) eBay Transaction report **while preserving
- * the order that the first "order" row appears in the file**.
+ * Parse a cleaned (comma-separated) eBay Transaction report
+ * while preserving the original row order.
  *
- * It returns an **array** rather than an object so the caller can write rows
- * directly in the original sequence.
- *
- * @param {string} filePath – absolute path to the cleaned CSV produced by cleanCsvFile
- * @returns {Promise<Array<Object>>} – ordered rows ready for CSV output
+ * @param {string} filePath – Absolute path to the cleaned CSV
+ * @returns {Promise<Array<Object>>} – Ordered rows for CSV output
  */
 function parseCsvFile(filePath) {
   console.log('Reading CSV from:', filePath);
 
-  // lookup by order number (for quick mutation) + ordered array of refs
   const map = new Map();
   const rows = [];
 
@@ -26,15 +22,12 @@ function parseCsvFile(filePath) {
     fs.createReadStream(filePath)
       .pipe(csv(csvOptions))
       .on('data', (row) => {
-        // Skip header row emitted by csv-parser
-        if (row['Type'] === 'Type') return;
-
+        if (row['Type'] === 'Type') return; // skip header rows
         const type = (row['Type'] || '').toLowerCase();
         const orderNo = row['Order number'];
         if (!orderNo) return;
 
-        // Create a row object *only* when we first encounter an "order" line
-        // always create aggregate row on first sight of any line
+        // First encounter of this order
         if (!map.has(orderNo)) {
           const obj = {
             sku: '',
@@ -51,28 +44,28 @@ function parseCsvFile(filePath) {
         }
 
         const order = map.get(orderNo);
-        if (!order) return;     // Ignore fee/label rows w/o matching order
+        if (!order) return;
 
         if (type === 'order') {
-          // SKU & title are most reliable here
           if (!order.sku && row['Custom label']) order.sku = row['Custom label'];
           if (!order.itemTitle && row['Item title']) order.itemTitle = row['Item title'];
 
-          order.quantity    += parseInt(row['Quantity'] || '0', 10);
-          order.soldAmount  = round2(order.soldAmount + parseFloat(row['Item subtotal'] || '0'));
-          order.fvFee       = round2(order.fvFee + parseFloat(row['Final Value Fee - fixed'] || '0') +
-                                                  parseFloat(row['Final Value Fee - variable'] || '0'));
+          order.quantity += parseInt(row['Quantity'] || '0', 10);
+          order.soldAmount = round2(order.soldAmount + parseAmount(row['Item subtotal']));
+          order.fvFee = round2(order.fvFee
+            + parseAmount(row['Final Value Fee - fixed'])
+            + parseAmount(row['Final Value Fee - variable'])
+            + parseAmount(row['Very high "item not as described" fee'])
+          );
         } else if (type === 'other fee') {
-          // Treat every net amount from an "Other fee" row as Ad fee for that order
-          order.adFee = round2(order.adFee + parseFloat(row['Net amount'] || '0'));
-        }
-        else if (type === 'shipping label') {
-          order.shipCost = round2(order.shipCost + parseFloat(row['Net amount'] || '0'));
+          order.adFee = round2(order.adFee + parseAmount(row['Net amount']));
+        } else if (type === 'shipping label') {
+          order.shipCost = round2(order.shipCost + parseAmount(row['Net amount']));
         }
       })
       .on('end', () => {
         console.log('Finished parsing. Total valid orders:', rows.length);
-        resolve(rows.slice().reverse()); // return in reverse order
+        resolve(rows.slice().reverse()); // reverse for output order
       })
       .on('error', reject);
   });
@@ -89,6 +82,12 @@ function formatDate(dateString) {
 
 function round2(num) {
   return Math.round((num + Number.EPSILON) * 100) / 100;
+}
+
+function parseAmount(value) {
+  if (!value || value.trim() === '--') return 0;
+  const parsed = parseFloat(value.replace(/[^\d.-]/g, ''));
+  return isNaN(parsed) ? 0 : parsed;
 }
 
 module.exports = { parseCsvFile };
