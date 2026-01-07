@@ -26,7 +26,7 @@ async function processReport(dateStr) {
   const outputPath = path.join(folderPath, `newRows-${dateStr}.csv`);
   const output = fs.createWriteStream(outputPath);
 
-  output.write('SKU,Date sold,2025 Online Inventory Tracker,# Sold,Sold $,FV Fee,Ad Fee,Ship Cost\n');
+  output.write('SKU,Date sold,2026 Online Inventory Tracker,# Sold,Sold $,FV Fee,Ad Fee,Ship Cost, Paid ship\n');
 
   for (const order of Object.values(orders)) {
     output.write([
@@ -37,7 +37,8 @@ async function processReport(dateStr) {
       order.soldAmount.toFixed(2),
       order.fvFee.toFixed(2),
       order.adFee.toFixed(2),
-      order.shipCost.toFixed(2)
+      order.shipCost.toFixed(2),
+      order.paidShip.toFixed(2)
     ].join(',') + '\n');
   }
 

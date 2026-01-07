@@ -38,6 +38,7 @@ function parseCsvFile(filePath) {
             fvFee: 0,
             adFee: 0,
             shipCost: 0,
+            paidShip: 0
           };
           map.set(orderNo, obj);
           rows.push(obj);
@@ -57,6 +58,7 @@ function parseCsvFile(filePath) {
             + parseAmount(row['Final Value Fee - variable'])
             + parseAmount(row['Very high "item not as described" fee'])
           );
+          order.paidShip = round2(order.paidShip + parseAmount(row['Shipping and handling']));
         } else if (type === 'other fee') {
           order.adFee = round2(order.adFee + parseAmount(row['Net amount']));
         } else if (type === 'shipping label') {

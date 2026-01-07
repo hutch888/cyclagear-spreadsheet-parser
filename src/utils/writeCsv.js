@@ -23,6 +23,7 @@ function writeCsvFromJson(rows, dateArg, outputFolder) {
     { label: 'FV Fee', value: 'fvFee' },
     { label: 'Ad Fee', value: 'adFee' },
     { label: 'Ship Cost', value: 'shipCost' },
+    { label: 'Paid Ship', value: 'paidShip' },
   ];
 
   const parser = new Parser({ fields, header: true, quote: '' });
